@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mega Command Center — Prototype (Single File)</title>
+<style>
+  :root{--bg:#0f1724;--card:#0b1220;--accent:#7c5cff;--muted:#9aa4b2;--glass:rgba(255,255,255,0.03)}
+  html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+  body{background:linear-gradient(180deg,#061025 0%, #071024 100%);color:#e6eef6}
+  .app{display:grid;grid-template-columns:260px 1fr;gap:18px;height:100vh;padding:18px;box-sizing:border-box}
+  .sidebar{background:var(--card);border-radius:14px;padding:14px;box-shadow:0 8px 30px rgba(0,0,0,0.6);overflow:auto}
+  .brand{font-weight:700;letter-spacing:0.6px;color:var(--accent);font-size:18px;margin-bottom:12px}
+  .nav{display:flex;flex-direction:column;gap:8px}
+  .nav button{background:transparent;border:0;color:var(--muted);text-align:left;padding:10px;border-radius:8px;cursor:pointer}
+  .nav button.active{background:linear-gradient(90deg,rgba(124,92,255,0.12),rgba(124,92,255,0.06));color:#fff}
+  .search{margin-top:12px}
+  .main{padding:18px;overflow:auto}
+  .topbar{display:flex;justify-content:space-between;align-items:center}
+  .card{background:var(--glass);padding:14px;border-radius:12px;margin-bottom:14px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+  .hub-title{display:flex;justify-content:space-between;align-items:center}
+  .btn{background:var(--accent);border:0;padding:8px 12px;border-radius:10px;color:#fff;cursor:pointer}
+  .link-list{list-style:none;padding:0;margin:8px 0}
+  .link-list li{padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center}
+  .small{font-size:12px;color:var(--muted)}
+  .modal{position:fixed;inset:0;background:rgba(2,6,23,0.7);display:flex;align-items:center;justify-content:center}
+  .modal .panel{background:#071026;padding:18px;border-radius:12px;min-width:320px;max-width:900px}
+  .badge{background:rgba(255,255,255,0.06);padding:6px 10px;border-radius:999px;font-size:12px}
+  input,select,textarea{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;width:100%;box-sizing:border-box}
+  .server-list{font-family:monospace;font-size:13px}
+  .toast{position:fixed;right:22px;bottom:22px;background:#0b1624;padding:10px;border-radius:10px;box-shadow:0 6px 30px rgba(0,0,0,0.6)}
+  footer{color:var(--muted);font-size:12px;margin-top:18px}
+  /* responsive */
+  @media(max-width:880px){.app{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" role="navigation">
+    <div class="brand">Mega Command Center — Prototype</div>
+    <div class="small">A single-file offline-first simulation. No real banking or auth is implemented — front-end demo only.</div>
+    <div class="search card">
+      <input id="global-search" placeholder="Quick search hubs, servers, users..." />
+    </div>
+    <nav class="nav" id="nav">
+      <button data-page="dashboard" class="active">Dashboard</button>
+      <button data-page="platforms">Platforms</button>
+      <button data-page="servers">Servers</button>
+      <button data-page="history">History</button>
+      <button data-page="dev">Developer Console</button>
+      <button data-page="admin">Admin Oversight</button>
+    </nav>
+    <div style="margin-top:12px">
+      <div class="card">
+        <div id="auth-area"></div>
+      </div>
+      <div class="card small" style="margin-top:8px">Offline-first demo uses localStorage & IndexedDB for the "database". Replace with secure server & proper auth for production.</div>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <!-- dynamic content injected here -->
+  </main>
+</div>
+
+<!-- modal container -->
+<div id="modal-root"></div>
+
+<script>
+// ========== Minimal "database" ===========
+const DB_KEY = 'mcc_prototype_db_v1';
+const HISTORY_KEY = 'mcc_prototype_history_v1';
+
+const seedDB = ()=>{
+  const now = new Date().toISOString();
+  return {
+    meta:{created:now,version:'0.1-proto',name:'Mega Command Center Prototype'},
+    users:[
+      {id:'guest',name:'Guest',role:'guest'},
+      {id:'admin',name:'Admin',role:'admin',password:'admin'}
+    ],
+    platforms:[
+      {id:'p_social',name:'Social Hub',type:'social',desc:'Links to social networks, mini-hubs, embedded previews',servers:[{id:'s1',label:'US-East Social',url:'https://example.com',status:'online'},{id:'s2',label:'EU Social',url:'https://example.com',status:'online'}],links:[{label:'Twitter',url:'https://twitter.com'},{label:'Facebook',url:'https://facebook.com'},{label:'Instagram',url:'https://instagram.com'}]},
+      {id:'p_media',name:'Media & Anime',type:'media',desc:'Manga, anime hubs and previews',servers:[{id:'s3',label:'Media-Asia',url:'https://example.com',status:'online'}],links:[{label:'MyAnimeList',url:'https://myanimelist.net'},{label:'MangaDex',url:'https://mangadex.org'}]},
+      {id:'p_banking',name:'Banking (SIMULATED)',type:'banking',desc:'Prototype banking hub (NO REAL INTEGRATION). Only simulated UI to test flows.',servers:[{id:'s4',label:'Bank-Sandbox',url:'#',status:'sandbox'}],links:[{label:'Sample Bank (Simulator)',url:'#'}]},
+      {id:'p_dev',name:'Developer Tools',type:'dev',desc:'Developer mini-hubs: API lists, deployment checkers, CI/CD links',servers:[{id:'s5',label:'CI Runner',url:'#',status:'online'}],links:[{label:'GitHub',url:'https://github.com'},{label:'Vercel',url:'https://vercel.com'}]}
+    ],
+    logs:[],
+    settings:{inspection:true,autoFlagging:true}
+  }
+}
+
+function getDB(){
+  const raw = localStorage.getItem(DB_KEY);
+  if(!raw){ const d = seedDB(); localStorage.setItem(DB_KEY,JSON.stringify(d)); return d }
+  try{return JSON.parse(raw)}catch(e){const d=seedDB();localStorage.setItem(DB_KEY,JSON.stringify(d));return d}
+}
+function saveDB(db){localStorage.setItem(DB_KEY,JSON.stringify(db));}
+
+// History helpers
+function pushHistory(entry){
+  const arr = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+  arr.unshift({ts:new Date().toISOString(),...entry});
+  if(arr.length>300) arr.pop();
+  localStorage.setItem(HISTORY_KEY,JSON.stringify(arr));
+}
+function getHistory(){return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]')}
+
+// ========= App state =========
+const appState = {page:'dashboard',user:{id:'guest',name:'Guest',role:'guest'}}
+const db = getDB();
+
+// ========= UI Utilities =========
+const $ = sel=>document.querySelector(sel);
+const $$ = sel=>Array.from(document.querySelectorAll(sel));
+function toast(msg,ttl=2500){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),ttl)}
+function openModal(html){const root = document.getElementById('modal-root');root.innerHTML = `<div class="modal" id="__modal"> <div class="panel">${html}</div></div>`;document.getElementById('__modal').addEventListener('click',e=>{if(e.target.id==='__modal') root.innerHTML=''});
+}
+
+// ========= Auth area =========
+function renderAuthArea(){
+  const el = document.getElementById('auth-area');
+  if(appState.user.role==='guest'){
+    el.innerHTML = `<div style="display:flex;gap:8px;flex-direction:column"><div class="small">Signed in as Guest</div><button id="btn-login" class="btn">Quick Login (admin)</button></div>`;
+    document.getElementById('btn-login').onclick = ()=>{
+      openModal(`<h3>Admin quick login</h3><div style="margin-top:8px"><label>Password</label><input id="pw" type="password" /></div><div style="margin-top:10px;display:flex;gap:8px"><button id="do-login" class="btn">Login</button><button id="do-c" class="btn" style="background:#333">Cancel</button></div>`);
+      setTimeout(()=>{
+        document.getElementById('do-c').onclick = ()=>document.getElementById('modal-root').innerHTML='';
+        document.getElementById('do-login').onclick = ()=>{
+          const pw = document.getElementById('pw').value;
+          const admin = db.users.find(u=>u.id==='admin');
+          if(pw === admin.password){ appState.user = {id:admin.id,name:admin.name,role:admin.role}; document.getElementById('modal-root').innerHTML=''; render(); toast('Admin logged in — prototype only'); pushHistory({action:'login',user:admin.id}) }
+          else toast('Wrong password — demo only');
+        }
+      },40)
+    }
+  } else {
+    el.innerHTML = `<div style="display:flex;gap:8px;flex-direction:column"><div><strong>${appState.user.name}</strong> <span class="small">(${appState.user.role})</span></div><div style="display:flex;gap:8px"><button id="btn-logout" class="btn" style="background:#333">Logout</button><button id="btn-profile" class="btn">Profile</button></div></div>`;
+    document.getElementById('btn-logout').onclick = ()=>{appState.user={id:'guest',name:'Guest',role:'guest'};render();toast('Logged out — guest mode');pushHistory({action:'logout'})}
+    document.getElementById('btn-profile').onclick = ()=>{
+      openModal(`<h3>Profile — ${appState.user.name}</h3><div style="margin-top:8px">Role: ${appState.user.role}</div><div style="margin-top:12px"><button id="closep" class="btn">Close</button></div>`);
+      setTimeout(()=>document.getElementById('closep').onclick=()=>document.getElementById('modal-root').innerHTML='',40)
+    }
+  }
+}
+
+// ========= Rendering pages =========
+function navTo(page){appState.page=page;render();pushHistory({action:'nav',page})}
+
+function renderSidebarNav(){
+  $$('#nav button').forEach(b=>{
+    b.classList.toggle('active', b.dataset.page===appState.page);
+    b.onclick = ()=>navTo(b.dataset.page);
+  })
+}
+
+function dashboardPage(){
+  return `
+  <div class="topbar"><div><h2>Dashboard</h2><div class="small">Prototype overview & quick actions</div></div><div><button id="btn-refresh" class="btn">Refresh DB</button></div></div>
+  <div class="grid" style="margin-top:12px">
+    <div class="card">
+      <div class="hub-title"><div><strong>Platforms</strong><div class="small">Quick access to platform mini-hubs</div></div><div class="badge">${db.platforms.length} hubs</div></div>
+      <ul class="link-list" id="dash-platforms">
+      ${db.platforms.map(p=>`<li><span>${p.name}</span><button data-id="${p.id}" class="btn small-btn">Open</button></li>`).join('')}
+      </ul>
+    </div>
+    <div class="card">
+      <div class="hub-title"><div><strong>Recent History</strong><div class="small">Recent actions & visits</div></div><div class="badge">${getHistory().length}</div></div>
+      <div style="margin-top:8px" id="dash-history"></div>
+    </div>
+  </div>
+  `
+}
+
+function platformsPage(){
+  return `
+  <div><h2>Platforms</h2><div class="small">Each platform is a mini-hub. Click a hub to open its workspace.</div></div>
+  <div class="grid" style="margin-top:12px">${db.platforms.map(p=>`<div class="card"><div class="hub-title"><div><strong>${p.name}</strong><div class="small">${p.desc}</div></div><div><button data-open="${p.id}" class="btn">Open Hub</button></div></div>
+  <div style="margin-top:8px"><ul class="link-list">${p.links.map(l=>`<li><span>${l.label}</span><a class="btn" href="${l.url}" target="_blank" rel="noopener">Visit</a></li>`).join('')}</ul></div>
+  <div class="small">Servers: ${p.servers.map(s=>s.label).join(', ')}</div></div>`).join('')}</div>
+  `
+}
+
+function serversPage(){
+  return `
+    <div><h2>Servers</h2><div class="small">Server list, statuses & quick SSH-like console (simulated)</div></div>
+    <div class="grid" style="margin-top:12px">${(db.platforms.flatMap(p=>p.servers)).map(s=>`<div class="card server-card"><div style="display:flex;justify-content:space-between"><div><strong>${s.label}</strong><div class="small">Status: ${s.status}</div></div><div><button data-server="${s.id}" class="btn">Connect</button></div></div><div style="margin-top:8px" class="server-list">URL: ${s.url}</div></div>`).join('')}</div>
+  `
+}
+
+function historyPage(){
+  const hist = getHistory();
+  return `
+    <div><h2>History & Activity</h2><div class="small">Local history of actions (stored in your browser). Useful for demo, not auditable for prod.</div></div>
+    <div style="margin-top:12px" class="card"><ul>${hist.map(h=>`<li style="padding:6px;border-bottom:1px dashed rgba(255,255,255,0.03)"><strong>${h.action}</strong> — ${h.page||h.user||''} <div class="small">${new Date(h.ts).toLocaleString()}</div></li>`).join('')}</ul></div>
+  `
+}
+
+function devPage(){
+  return `
+    <div><h2>Developer Console</h2><div class="small">Local inspection & lightweight testing tools. Front-end only.</div></div>
+    <div class="card"><div><label>DB JSON</label><textarea id="dev-db" rows="8">${JSON.stringify(db, null, 2)}</textarea></div><div style="display:flex;gap:8px;margin-top:8px"><button id="dev-save" class="btn">Save DB</button><button id="dev-reset" class="btn" style="background:#333">Reset DB</button></div></div>
+    <div class="card"><h4>Quick API Simulator</h4><div class="small">Simulate a platform API response</div><div style="margin-top:8px"><select id="api-sel">${db.platforms.map(p=>`<option value="${p.id}">${p.name}</option>`)}</select><div style="margin-top:8px"><button id="api-call" class="btn">Call (simulate)</button></div></div></div>
+  `
+}
+
+function adminPage(){
+  return `
+    <div><h2>Admin Oversight</h2><div class="small">Tools to flag suspicious hubs & enable auto-flagging (demo).</div></div>
+    <div class="card"><div style="display:flex;justify-content:space-between"><div><strong>Auto Flagging</strong><div class="small">Toggle automatic content flagging (heuristics simulated)</div></div><div><label><input id="auto-flag" type="checkbox" ${db.settings.autoFlagging? 'checked':''} /> Enable</label></div></div></div>
+    <div class="card"><h4>Flagged Items</h4><div id="flagged-list" class="small"></div></div>
+  `
+}
+
+function renderMain(){
+  const main = document.getElementById('main');
+  if(appState.page==='dashboard') main.innerHTML = dashboardPage();
+  if(appState.page==='platforms') main.innerHTML = platformsPage();
+  if(appState.page==='servers') main.innerHTML = serversPage();
+  if(appState.page==='history') main.innerHTML = historyPage();
+  if(appState.page==='dev') main.innerHTML = devPage();
+  if(appState.page==='admin') main.innerHTML = adminPage();
+
+  // attach event handlers after render
+  if(appState.page==='dashboard'){
+    document.getElementById('btn-refresh').onclick = ()=>{ location.reload() }
+    document.querySelectorAll('#dash-platforms button').forEach(b=>b.onclick = ()=>openHub(b.dataset.id))
+    const histEl = document.getElementById('dash-history'); const h = getHistory().slice(0,6);
+    histEl.innerHTML = h.map(x=>`<div style="padding:6px;border-bottom:1px dashed rgba(255,255,255,0.03)"><strong>${x.action}</strong> <div class="small">${new Date(x.ts).toLocaleString()}</div></div>`).join('')
+  }
+
+  if(appState.page==='platforms'){
+    document.querySelectorAll('[data-open]').forEach(b=>b.onclick = ()=>openHub(b.dataset.open))
+  }
+
+  if(appState.page==='servers'){
+    document.querySelectorAll('[data-server]').forEach(b=>b.onclick = ()=>{
+      const sid = b.dataset.server; const server = db.platforms.flatMap(p=>p.servers).find(s=>s.id===sid);
+      openModal(`<h3>Server console - ${server.label}</h3><div class="small">Simulated console. No network actions performed.</div><div style="margin-top:8px"><textarea id="srvcmd" rows="6" placeholder="Type a command (simulated)"></textarea></div><div style="margin-top:8px;display:flex;gap:8px"><button id="runcmd" class="btn">Run</button><button id="closecmd" class="btn" style="background:#333">Close</button></div><div id="srvout" style="margin-top:8px;font-family:monospace;background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;min-height:80px"></div>`);
+      setTimeout(()=>{
+        document.getElementById('closecmd').onclick = ()=>document.getElementById('modal-root').innerHTML='';
+        document.getElementById('runcmd').onclick = ()=>{
+          const v = document.getElementById('srvcmd').value || 'ping -c 4 127.0.0.1';
+          const out = `> ${v}\nSimulated output:\nPONG PONG PONG\nDone.`;
+          document.getElementById('srvout').textContent = out; pushHistory({action:'server_cmd',server:server.label,cmd:v});
+        }
+      },40)
+    })}
+
+  if(appState.page==='dev'){
+    document.getElementById('dev-save').onclick = ()=>{
+      try{ const newdb = JSON.parse(document.getElementById('dev-db').value); saveDB(newdb); toast('DB saved (localStorage)'); pushHistory({action:'dev_save'}) }catch(e){toast('Invalid JSON — not saved')}
+    }
+    document.getElementById('dev-reset').onclick = ()=>{ if(confirm('Reset local DB to prototype seed?')){ localStorage.removeItem(DB_KEY); localStorage.removeItem(HISTORY_KEY); location.reload() }}
+    document.getElementById('api-call').onclick = ()=>{
+      const pid = document.getElementById('api-sel').value; const plat = db.platforms.find(p=>p.id===pid);
+      openModal(`<h3>API Sim — ${plat.name}</h3><pre style="font-family:monospace;max-height:400px;overflow:auto">${JSON.stringify(plat, null, 2)}</pre><div style="margin-top:8px"><button id="clap" class="btn">Close</button></div>`);
+      setTimeout(()=>document.getElementById('clap').onclick=()=>document.getElementById('modal-root').innerHTML='',40)
+    }
+  }
+
+  if(appState.page==='admin'){
+    document.getElementById('auto-flag').onchange = (e)=>{ db.settings.autoFlagging = e.target.checked; saveDB(db); toast('Auto-flag setting updated'); pushHistory({action:'toggle_auto_flag',val:e.target.checked}) }
+    const flagged = db.logs.filter(l=>l.flagged).map(l=>`<div style="padding:6px;border-bottom:1px dashed rgba(255,255,255,0.03)"><strong>${l.type||'item'}</strong><div class="small">${l.note}</div></div>`);
+    document.getElementById('flagged-list').innerHTML = flagged.join('') || '<div class="small">No flagged items</div>'
+  }
+
+  renderAuthArea();
+}
+
+function render(){
+  renderSidebarNav();
+  renderMain();
+}
+
+// ========= Hub workspace =========
+function openHub(id){
+  const plat = db.platforms.find(p=>p.id===id);
+  pushHistory({action:'open_hub',hub:plat.id});
+  // create workspace modal-like but inside main area
+  appState.page = `hub:${id}`;
+  const main = document.getElementById('main');
+  main.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center"><div><h2>${plat.name}</h2><div class="small">${plat.desc}</div></div><div><button id="back-to-platforms" class="btn">Back</button></div></div>
+    <div style="margin-top:12px" class="grid">
+      <div class="card">
+        <div class="hub-title"><div><strong>Server List</strong><div class="small">Available servers for this hub</div></div><div><span class="badge">${plat.servers.length}</span></div></div>
+        <div style="margin-top:8px"><ul class="link-list">${plat.servers.map(s=>`<li><span>${s.label} <div class="small">${s.status}</div></span><div><button data-sid="${s.id}" class="btn">Connect</button></div></li>`).join('')}</ul></div>
+      </div>
+      <div class="card">
+        <div class="hub-title"><div><strong>Links & Previews</strong><div class="small">Click a link to open externally. Live preview loads if online.</div></div><div><span class="badge">${plat.links.length}</span></div></div>
+        <div style="margin-top:8px">${plat.links.map((l,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:6px;border-radius:8px;background:rgba(255,255,255,0.02);margin-bottom:8px"><div style="flex:1"><strong>${l.label}</strong><div class="small">${l.url}</div></div><div><button data-preview="${i}" data-url="${l.url}" class="btn">Preview</button> <a class="btn" href="${l.url}" target="_blank" rel="noopener">Go</a></div></div>`).join('')}</div>
+      </div>
+      <div class="card">
+        <div class="hub-title"><div><strong>Embedded Chat (Simulated)</strong><div class="small">Small demo chat to mimic embedded third-party chat. No network calls.</div></div><div class="badge">Live</div></div>
+        <div style="margin-top:8px"><div id="chat-${plat.id}" style="border-radius:8px;padding:8px;background:rgba(0,0,0,0.12);max-height:260px;overflow:auto"></div>
+        <div style="display:flex;gap:8px;margin-top:8px"><input id="chat-in-${plat.id}" placeholder="Say something (simulated)" /><button data-chat-send class="btn">Send</button></div></div>
+      </div>
+    </div>
+    <footer>Prototype uses local storage and does NOT transmit any banking credentials. Treat all "banking" areas as mock UI for testing only.</footer>
+  `;
+
+  // attach handlers
+  document.getElementById('back-to-platforms').onclick = ()=>{ appState.page='platforms'; render(); }
+  main.querySelectorAll('[data-sid]').forEach(b=>b.onclick = ()=>{
+    const sid = b.dataset.sid; const server = plat.servers.find(s=>s.id===sid);
+    openModal(`<h3>Connect to ${server.label}</h3><div class="small">Simulated connection to ${server.url}</div><div style="margin-top:10px"><button id="xclose" class="btn">Close</button></div>`);
+    setTimeout(()=>document.getElementById('xclose').onclick=()=>document.getElementById('modal-root').innerHTML='',40)
+  })
+
+  main.querySelectorAll('[data-preview]').forEach(b=>b.onclick = ()=>{
+    const url = b.dataset.url; const idx = b.dataset.preview;
+    pushHistory({action:'preview',url,urlIdx:idx,hub:plat.id});
+    // if online, try to open embed; otherwise show placeholder
+    if(navigator.onLine && url.startsWith('http')){
+      openModal(`<h3>Live Preview — ${url}</h3><div style="min-height:220px"><iframe src="${url}" style="width:100%;height:420px;border:0;border-radius:8px"></iframe></div><div style="margin-top:8px"><button id="closeP" class="btn">Close</button></div>`);
+      setTimeout(()=>document.getElementById('closeP').onclick=()=>document.getElementById('modal-root').innerHTML='',40)
+    } else {
+      openModal(`<h3>Offline Preview</h3><div style="padding:18px;background:linear-gradient(180deg,rgba(124,92,255,0.06),rgba(255,255,255,0.01));border-radius:8px">Cannot load live site while offline. This is a simulated preview: <div style="margin-top:8px;font-family:monospace">${url}</div></div><div style="margin-top:8px"><button id="pc" class="btn">Close</button></div>`);
+      setTimeout(()=>document.getElementById('pc').onclick=()=>document.getElementById('modal-root').innerHTML='',40)
+    }
+  })
+
+  // chat handlers (simulated)
+  const chatLog = main.querySelector(`#chat-${plat.id}`);
+  const chatIn = document.getElementById(`chat-in-${plat.id}`);
+  main.querySelector('[data-chat-send]').onclick = ()=>{
+    const v = chatIn.value.trim(); if(!v) return; const el = document.createElement('div'); el.style.padding='8px'; el.style.marginBottom='8px'; el.style.background='rgba(255,255,255,0.03)'; el.innerHTML = `<strong>You</strong><div class="small">${new Date().toLocaleTimeString()}</div><div style="margin-top:6px">${escapeHtml(v)}</div>`; chatLog.appendChild(el); chatIn.value=''; chatLog.scrollTop = chatLog.scrollHeight; pushHistory({action:'chat',hub:plat.id,msg:v})
+    // simulated bot reply
+    setTimeout(()=>{ const r = document.createElement('div'); r.style.padding='8px'; r.style.marginBottom='8px'; r.style.background='rgba(255,255,255,0.02)'; r.innerHTML = `<strong>${plat.name} Bot</strong><div class="small">${new Date().toLocaleTimeString()}</div><div style="margin-top:6px">Auto-reply to: ${truncate(v,80)}</div>`; chatLog.appendChild(r); chatLog.scrollTop = chatLog.scrollHeight; pushHistory({action:'chat_reply',hub:plat.id,reply:`Auto-reply to ${truncate(v,30)}`}) },600)
+  }
+}
+
+// ========= Helpers =========
+function truncate(s,n){return s.length>n? s.slice(0,n)+'...':s}
+function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ========= Global search =========
+$('#global-search').addEventListener('input', (e)=>{
+  const q = e.target.value.toLowerCase().trim(); if(!q) return; const found = [];
+  db.platforms.forEach(p=>{ if(p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q)) found.push({type:'platform',item:p})
+    p.links.forEach(l=>{ if(l.label.toLowerCase().includes(q) || l.url.toLowerCase().includes(q)) found.push({type:'link',item:l,hub:p}) })
+  })
+  if(found.length) openModal(`<h3>Search results for "${q}"</h3><div style="max-height:400px;overflow:auto">${found.map(f=>`<div style="padding:8px;border-bottom:1px dashed rgba(255,255,255,0.03)"><strong>${f.type}</strong> — ${f.item.label||f.item.name} <div class="small">${f.hub? 'Hub: '+f.hub.name:''}</div></div>`).join('')}</div><div style="margin-top:8px"><button id="closes" class="btn">Close</button></div>`);
+  setTimeout(()=>document.getElementById('closes')?.addEventListener('click', ()=>document.getElementById('modal-root').innerHTML=''),40)
+})
+
+// initial render
+render();
+
+// Basic error checking (lint-ish)
+(function basicSanity(){
+  const errors = [];
+  if(!db.platforms || !Array.isArray(db.platforms)) errors.push('platforms missing or invalid');
+  db.platforms.forEach(p=>{ if(!p.id) errors.push('platform missing id'); if(!p.links) p.links = [] });
+  if(errors.length){ openModal(`<h3>Prototype Integrity Check</h3><div class="small">Found issues: <ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul></div><div style="margin-top:8px"><button id="fixit" class="btn">Auto-fix (seed)</button></div>`);
+    setTimeout(()=>document.getElementById('fixit').onclick=()=>{ localStorage.removeItem(DB_KEY); location.reload() },40)
+  }
+})();
+
+// Accessibility: keyboard nav for sidebar
+window.addEventListener('keydown', (e)=>{ if(e.altKey && e.key==='1') navTo('dashboard'); if(e.altKey && e.key==='2') navTo('platforms'); if(e.altKey && e.key==='3') navTo('servers'); })
+
+</script>
+</body>
+</html>
